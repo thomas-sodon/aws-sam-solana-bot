@@ -1,0 +1,82 @@
+name: Deploy
+
+# Manual only: forks and the public repository never deploy automatically.
+# Each GitHub environment (testing, production) supplies its own variables:
+#   AWS_REGION, PIPELINE_EXECUTION_ROLE_ARN, CLOUDFORMATION_EXECUTION_ROLE_ARN,
+#   ARTIFACTS_BUCKET, IMAGE_REPOSITORY, STACK_NAME and SECRET_NAME (all required).
+# Only the production environment deploys with EnableExecution=true; every other
+# environment deploys in dry-run mode (a value in the secret still takes precedence).
+# Add required reviewers to the production environment to gate prod deploys.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [testing, production]
+        default: testing
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_NAME: ${{ vars.STACK_NAME }}
+      ARTIFACTS_BUCKET: ${{ vars.ARTIFACTS_BUCKET }}
+      IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
+      CLOUDFORMATION_EXECUTION_ROLE_ARN: ${{ vars.CLOUDFORMATION_EXECUTION_ROLE_ARN }}
+      SECRET_NAME: ${{ vars.SECRET_NAME }}
+      ENABLE_EXECUTION: ${{ inputs.environment == 'production' && 'true' || 'false' }}
+    steps:
+      - name: Check required environment variables
+        env:
+          PIPELINE_EXECUTION_ROLE_ARN: ${{ vars.PIPELINE_EXECUTION_ROLE_ARN }}
+        run: |
+          missing=0
+          for name in AWS_REGION STACK_NAME ARTIFACTS_BUCKET IMAGE_REPOSITORY \
+            CLOUDFORMATION_EXECUTION_ROLE_ARN PIPELINE_EXECUTION_ROLE_ARN SECRET_NAME; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Environment variable $name is not set for the '${{ inputs.environment }}' environment"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Build
+        run: sam build --template template.yaml --use-container
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.PIPELINE_EXECUTION_ROLE_ARN }}
+          role-session-name: sam-deploy-${{ inputs.environment }}
+          role-duration-seconds: 3600
+
+      - name: Deploy
+        run: |
+          sam deploy \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --s3-bucket "$ARTIFACTS_BUCKET" \
+            --image-repository "$IMAGE_REPOSITORY" \
+            --role-arn "$CLOUDFORMATION_EXECUTION_ROLE_ARN" \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides "SecretName=$SECRET_NAME" "EnableExecution=$ENABLE_EXECUTION" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset

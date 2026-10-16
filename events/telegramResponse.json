@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "result": {
+    "message_id": 1,
+    "from": {
+      "id": 987654321,
+      "is_bot": true,
+      "first_name": "Example Bot",
+      "username": "example_bot"
+    },
+    "chat": {
+      "id": 123456789,
+      "first_name": "Example",
+      "last_name": "User",
+      "username": "example_user",
+      "type": "private"
+    },
+    "date": 1730000000,
+    "text": "🔴 ----SWAP ERROR---\nSwap event not found"
+  }
+}

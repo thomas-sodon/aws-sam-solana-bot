@@ -1,0 +1,94 @@
+import { EnrichedTransaction, TransactionType } from 'helius-sdk';
+
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+
+import { lambdaHandler } from '../../src/app';
+import { WorkerError, WorkerErrorType } from '../../src/errors/worker-error';
+import { handleRequest } from '../../src/handler/request-handler';
+import { processSwapEvent } from '../../src/handler/swap-handler';
+import { sendMessage, updateMessage } from '../../src/telegram/telegram';
+import { SwapProgress } from '../../src/types';
+import { WorkerContext } from '../../src/worker-context';
+import { buildEvent } from '../util/test-data-factory';
+import { fakeEnv } from './fixtures';
+
+// Nothing here may load secrets or open connections: the context, Telegram and swap execution are all fakes
+jest.mock('../../src/worker-context');
+jest.mock('../../src/telegram/telegram');
+jest.mock('../../src/handler/swap-handler');
+
+const mockedBuild = jest.mocked(WorkerContext.build);
+const mockedSendMessage = jest.mocked(sendMessage);
+const mockedUpdateMessage = jest.mocked(updateMessage);
+const mockedProcessSwapEvent = jest.mocked(processSwapEvent);
+
+const fakeWc = () =>
+    ({
+        env: fakeEnv(),
+        connectionPool: { getLastConnection: () => 'HELIUS:abcd:getSlot' },
+    }) as unknown as WorkerContext;
+
+const webhookBody = (tx: Partial<EnrichedTransaction>) => JSON.stringify([tx]);
+
+describe('lambdaHandler auth', () => {
+    beforeEach(() => {
+        mockedBuild.mockResolvedValue(fakeWc());
+        mockedSendMessage.mockResolvedValue({ ok: true, result: { message_id: 1 } } as any);
+    });
+
+    it.each([
+        ['a wrong Authorization header', { Authorization: 'wrong' }, webhookBody({ description: 'x' })],
+        ['a missing Authorization header', {}, webhookBody({ description: 'x' })],
+        ['an empty body', { Authorization: 'expected-auth' }, ''],
+    ])('ignores requests with %s without processing or notifying', async (_label, headers, body) => {
+        const response = await lambdaHandler(buildEvent({ headers, body }));
+        expect(response.statusCode).toBe(200);
+        expect(JSON.parse(response.body)).toEqual({ message: 'Not processed' });
+        expect(mockedProcessSwapEvent).not.toHaveBeenCalled();
+        expect(mockedSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('processes an authorised swap and edits the escaped Telegram processing message', async () => {
+        mockedProcessSwapEvent.mockResolvedValue({
+            messageToSendTransfer: 'done',
+            numRetries: 0,
+            transactionResult: { txSuccess: false } as any,
+        } as any);
+        const response = await lambdaHandler(
+            buildEvent({
+                headers: { Authorization: 'expected-auth' },
+                body: webhookBody({ type: TransactionType.SWAP, description: 'a <swap>', events: { swap: {} } as any }),
+            }),
+        );
+        expect(response.statusCode).toBe(200);
+        expect(mockedSendMessage.mock.calls[0][1]).toBe(`${SwapProgress.PROCESSING}: a &lt;swap&gt;`);
+        expect(mockedUpdateMessage.mock.calls[0][1]).toBe('done\nRetries: 0');
+    });
+
+    it('reports a missing token balance as an invalid swap rather than an error', async () => {
+        mockedProcessSwapEvent.mockRejectedValue(new WorkerError(WorkerErrorType.NO_TOKEN_BALANCE, 'mint'));
+        const response = await lambdaHandler(
+            buildEvent({
+                headers: { Authorization: 'expected-auth' },
+                body: webhookBody({ type: TransactionType.SWAP, description: 'sell', events: { swap: {} } as any }),
+            }),
+        );
+        expect(JSON.parse(response.body)).toEqual({ message: 'Processed.' });
+        expect(mockedUpdateMessage.mock.calls[0][1]).toContain(SwapProgress.SWAP_INVALID);
+        expect(mockedUpdateMessage.mock.calls[0][1]).toContain('No token balance found');
+    });
+});
+
+describe('handleRequest', () => {
+    it('ignores non-swap webhooks and escapes the dumped payload', async () => {
+        const result = await handleRequest(fakeWc(), { type: TransactionType.TRANSFER, description: '<x>' } as any);
+        expect(result.messageToSendTransfer.startsWith(SwapProgress.IGNORED)).toBe(true);
+        expect(result.messageToSendTransfer).toContain('&quot;description&quot;: &quot;&lt;x&gt;&quot;');
+        expect(mockedProcessSwapEvent).not.toHaveBeenCalled();
+    });
+
+    it('reports swaps without a swap event as errors', async () => {
+        const result = await handleRequest(fakeWc(), { type: TransactionType.SWAP, events: {} } as any);
+        expect(result.messageToSendTransfer).toBe(`${SwapProgress.ERROR}\nSwap event not found\n`);
+    });
+});

@@ -1,0 +1,41 @@
+[
+  {
+    "description": "ExampLeTraderWa11et1111111111111111111111111 swapped 0.1 SOL for 1234567.89 Bonk",
+    "type": "SWAP",
+    "source": "JUPITER",
+    "fee": 5000,
+    "feePayer": "ExampLeTraderWa11et1111111111111111111111111",
+    "signature": "ExampLeSignature11111111111111111111111111111111111111111111111111111111111111111111111",
+    "slot": 300000000,
+    "timestamp": 1730000000,
+    "nativeTransfers": [],
+    "tokenTransfers": [],
+    "accountData": [],
+    "transactionError": null,
+    "instructions": [],
+    "events": {
+      "swap": {
+        "nativeInput": {
+          "account": "ExampLeTraderWa11et1111111111111111111111111",
+          "amount": "100000000"
+        },
+        "nativeOutput": null,
+        "tokenInputs": [],
+        "tokenOutputs": [
+          {
+            "userAccount": "ExampLeTraderWa11et1111111111111111111111111",
+            "tokenAccount": "ExampLeTraderBonkTokenAccount111111111111111",
+            "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+            "rawTokenAmount": {
+              "tokenAmount": "123456789000",
+              "decimals": 5
+            }
+          }
+        ],
+        "nativeFees": [],
+        "tokenFees": [],
+        "innerSwaps": []
+      }
+    }
+  }
+]

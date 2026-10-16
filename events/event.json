@@ -1,0 +1,34 @@
+{
+  "body": "[{\"description\": \"ExampLeTraderWa11et1111111111111111111111111 swapped 0.1 SOL for 1234567.89 Bonk\", \"type\": \"SWAP\", \"source\": \"JUPITER\", \"fee\": 5000, \"feePayer\": \"ExampLeTraderWa11et1111111111111111111111111\", \"signature\": \"ExampLeSignature11111111111111111111111111111111111111111111111111111111111111111111111\", \"slot\": 300000000, \"timestamp\": 1730000000, \"nativeTransfers\": [], \"tokenTransfers\": [], \"accountData\": [], \"transactionError\": null, \"instructions\": [], \"events\": {\"swap\": {\"nativeInput\": {\"account\": \"ExampLeTraderWa11et1111111111111111111111111\", \"amount\": \"100000000\"}, \"nativeOutput\": null, \"tokenInputs\": [], \"tokenOutputs\": [{\"userAccount\": \"ExampLeTraderWa11et1111111111111111111111111\", \"tokenAccount\": \"ExampLeTraderBonkTokenAccount111111111111111\", \"mint\": \"DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263\", \"rawTokenAmount\": {\"tokenAmount\": \"123456789000\", \"decimals\": 5}}], \"nativeFees\": [], \"tokenFees\": [], \"innerSwaps\": []}}}]",
+  "resource": "/processor",
+  "path": "/processor",
+  "httpMethod": "POST",
+  "isBase64Encoded": false,
+  "queryStringParameters": null,
+  "pathParameters": null,
+  "stageVariables": null,
+  "headers": {
+    "Authorization": "example-helius-webhook-auth-header",
+    "Content-Type": "application/json",
+    "Host": "1234567890.execute-api.us-east-1.amazonaws.com",
+    "User-Agent": "Helius-Webhook-Example",
+    "X-Forwarded-Proto": "https"
+  },
+  "requestContext": {
+    "accountId": "123456789012",
+    "resourceId": "123456",
+    "stage": "Prod",
+    "requestId": "00000000-0000-4000-8000-000000000000",
+    "requestTime": "27/Oct/2024:03:33:20 +0000",
+    "requestTimeEpoch": 1730000000000,
+    "identity": {
+      "sourceIp": "127.0.0.1",
+      "userAgent": "Helius-Webhook-Example"
+    },
+    "path": "/Prod/processor",
+    "resourcePath": "/processor",
+    "httpMethod": "POST",
+    "apiId": "1234567890",
+    "protocol": "HTTP/1.1"
+  }
+}

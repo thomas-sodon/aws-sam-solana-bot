@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sam-solana-bot
+
+  Solana copy-trading bot: an API Gateway endpoint receives Helius swap webhooks and a
+  container-image Lambda mirrors the swaps via Jupiter/Raydium, reporting to Telegram.
+
+Parameters:
+  SecretName:
+    Type: String
+    Default: prod/SolanaBot
+    Description: Name of the Secrets Manager secret holding the bot's API keys, wallet key and Telegram settings.
+  EnableExecution:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Set to 'false' to only simulate swaps instead of broadcasting them.
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 512
+
+Resources:
+  SolanaBotProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          SECRET_ID: !Ref SecretName
+          ENABLE_EXECUTION: !Ref EnableExecution
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*"
+      Events:
+        SolanaBotProcessor:
+          Type: Api
+          Properties:
+            Path: /processor
+            Method: post
+    Metadata:
+      DockerTag: nodejs20.x-v1
+      DockerContext: ./processor-lambda
+      Dockerfile: Dockerfile
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  SolanaBotProcessorApi:
+    Description: "API Gateway endpoint URL for Prod stage for Solana Bot Processor function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/processor/"
+  SolanaBotProcessorFunction:
+    Description: "Solana Bot Processor Lambda Function ARN"
+    Value: !GetAtt SolanaBotProcessorFunction.Arn
+  SolanaBotProcessorFunctionIamRole:
+    Description: "Implicit IAM Role created for Solana Bot Processor function"
+    Value: !GetAtt SolanaBotProcessorFunctionRole.Arn

@@ -1,0 +1,14 @@
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "priorityFeeLevels": {
+            "min": 0.0,
+            "low": 4349.0,
+            "medium": 50000.0,
+            "high": 161903.0,
+            "veryHigh": 3611960.6499999994,
+            "unsafeMax": 612737590.0
+        }
+    },
+    "id": "1"
+}
