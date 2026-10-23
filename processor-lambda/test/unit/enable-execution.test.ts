@@ -1,3 +1,6 @@
+import { readFileSync } from 'fs';
+import path from 'path';
+
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 
 import { buildEnv, parseBooleanFlag } from '../../src/config';
@@ -68,5 +71,15 @@ describe('buildEnv ENABLE_EXECUTION', () => {
         process.env.ENABLE_EXECUTION = 'true';
         mockedBuildSecrets.mockResolvedValue(secrets({ ENABLE_EXECUTION: 'off' }));
         expect((await buildEnv()).ENABLE_EXECUTION).toBe(false);
+    });
+});
+
+describe('SAM template EnableExecution parameter', () => {
+    it('defaults to dry-run so a plain deploy never broadcasts transactions', () => {
+        const template = readFileSync(path.join(__dirname, '../../../template.yaml'), 'utf8');
+        const parameter = template.match(/^ {2}EnableExecution:\n((?: {4}.*\n|\s*\n)+)/m);
+        expect(parameter).not.toBeNull();
+        expect(parameter![1]).toMatch(/^ {4}Default: 'false'$/m);
+        expect(template).toMatch(/ENABLE_EXECUTION: !Ref EnableExecution/);
     });
 });

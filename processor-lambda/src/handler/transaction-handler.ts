@@ -7,7 +7,7 @@ import { ConnectionOptions } from '../connection-pool';
 import { TransactionError, TransactionErrorLoggingDetails, TransactionErrorType } from '../errors/transaction-error';
 import { addHyperlink, escapeHtml } from '../telegram/message-generator';
 import { SigningResult, TransactionResult } from '../types';
-import { getElapsedTime } from '../util';
+import { errorMessage, getElapsedTime } from '../util';
 import { WorkerContext } from '../worker-context';
 
 export const signTransaction = (
@@ -60,7 +60,7 @@ export const executeTransaction = async (
                     connectionOptions,
                 )
                 .catch((e) => {
-                    console.log(`sendRawTransaction${i} error`, e);
+                    console.log(`sendRawTransaction${i} error: ${errorMessage(e)}`);
                 });
         }
         if (toggleCheckSignatureStatus) {
