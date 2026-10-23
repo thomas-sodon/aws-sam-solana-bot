@@ -7,6 +7,7 @@ import { Keypair, VersionedTransaction } from '@solana/web3.js';
 import { buildQuicknodeJupiterSwapBasePath } from '../config';
 import { JupiterError, JupiterErrorType } from '../errors/jupiter-error';
 import { SwapTransaction, TransactionInputs } from '../types';
+import { describeError } from '../util';
 import { WorkerContext } from '../worker-context';
 
 export async function buildJupiterSwapTransaction(
@@ -30,7 +31,7 @@ export async function buildJupiterSwapTransaction(
             inputTokenAmount.raw.toString(10),
         );
     } catch (e) {
-        console.log('getJupiterQuoteByUrl error', e);
+        console.log(`getJupiterQuoteByUrl error: ${describeError(e, true)}`);
     }
 
     if (checkResponseForError(quoteResponse)) {

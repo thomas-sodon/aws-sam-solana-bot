@@ -117,7 +117,7 @@ Dry-run mode: when `ENABLE_EXECUTION` is `false`, step 8 is replaced by one `sim
 - **Pool contents.** One connection is built for each of the single-key providers (Alchemy, Chainstack, Syndica, Helius). One more is added for every key in the comma-separated pool secrets (Helius, HelloMoon, Chainstack, Alchemy, Shyft).
 - **Rotation.** The list is Fisher-Yates shuffled at cold start, and each `executeWithConnection` call moves a round-robin index forward. Consecutive calls and retries are therefore spread across providers and free-tier keys. A caller can pin a provider, as the Helius priority-fee call does.
 - **Rate limits.** Pool connections set `disableRetryOnRateLimit`, which turns off web3.js's built-in backoff. On an HTTP 429 the pool instead moves to the next connection with bounded exponential backoff: 250, 500, 1000, 2000 and then 4000 ms, at most 5 times (`rateLimit.connection429`). These 429 retries do not use up the caller's own retry budget.
-- **Other errors.** These retry with the per-method budget and delay from `connectionOptions.*`, and send an HTML-escaped operational alert to Telegram. The alert is not awaited, and a failure to send it is caught.
+- **Other errors.** These retry with the per-method budget and delay from `connectionOptions.*`, and send an HTML-escaped operational alert to Telegram. Errors are redacted first: URLs are cut to their origin, so the API keys that providers carry in the URL path or query string never reach CloudWatch Logs or Telegram. The alert is not awaited, and a failure to send it is caught.
 - **Error tags.** Errors are tagged `PROVIDER:<last 4 chars of endpoint>:<method>`, so failures can be traced to a provider without printing the full endpoint in the tag. For providers that put the key at the end of the URL (Helius, Alchemy, Syndica, HelloMoon, Shyft), those 4 characters are the end of the key.
 
 ### Priority fees via Helius
@@ -252,6 +252,7 @@ The **unit suite** mocks the wallet, the connection pool, Telegram and the HTTP 
 - RPC rotation and the exact 429 backoff schedule
 - signature-status mapping, and simulation mode
 - Telegram payloads and HTML escaping
+- redaction of API keys from logged and Telegram error messages, for every provider URL
 - the handler's auth and response paths
 
 `test/setup/hermetic.ts` makes every socket, TLS connection and `fetch` throw, and clears AWS credentials. A missing mock therefore fails the test instead of reaching a real service, and `test/unit/hermetic-guard.test.ts` checks that the guard is active.
@@ -282,7 +283,7 @@ This is a working personal trading tool, not a hardened product. These are the k
   - There is one wallet per deployment.
   - There are no CloudWatch alarms or metrics beyond logs, and the secret is not created by IaC.
   - The confirmation loop rebroadcasts with no delay between iterations.
-- **Logging can expose RPC keys.** Transport errors from `node-fetch` (used by web3.js and the Jupiter/QuickNode clients) include the full request URL, which for most providers contains the API key. The connection pool logs these errors to CloudWatch and forwards them to Telegram.
+- **Error tags keep 4 characters of the endpoint.** Error messages are passed through `redactSecrets` (`src/util.ts`) before they are logged or sent to Telegram, which reduces every URL to its origin and blanks `api-key=`-style values, so the transport errors from `node-fetch` no longer carry provider keys. The `PROVIDER:<last 4 chars>` tags are kept on purpose for tracing, and for providers with the key at the end of the URL those are the last 4 characters of the key. A credential that appears in an error without a URL or an assignment would not be caught.
 - **Priority-fee unit mismatch.** Helius returns micro-lamports per compute unit. Jupiter receives that number as `prioritizationFeeLamports`, which it reads as total lamports, and `maxPrioritizationFeeLamports` is compared against the micro-lamport value despite its name. Only the Raydium path uses the unit correctly.
 - **Telegram failures fail the invocation.** If editing or sending the result message fails, the handler throws instead of falling back to a new message.
 

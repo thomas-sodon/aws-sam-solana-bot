@@ -1,5 +1,6 @@
 import { buildEnv } from '../src/config';
 import { ConnectionPool } from '../src/connection-pool';
+import { describeError } from '../src/util';
 
 const main = async () => {
     const env = await buildEnv();
@@ -15,4 +16,4 @@ const main = async () => {
     await Promise.all(connectionPromises);
 };
 
-main().catch((e) => console.error(e));
+main().catch((e) => console.error(describeError(e)));

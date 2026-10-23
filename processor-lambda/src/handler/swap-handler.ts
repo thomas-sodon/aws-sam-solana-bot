@@ -21,7 +21,7 @@ import {
     TransactionInputs,
     TransactionResult,
 } from '../types';
-import { getElapsedTime, getErrorObject, sleep } from '../util';
+import { describeError, getElapsedTime, redactSecrets, sleep } from '../util';
 import { getWalletTokenAmount } from '../wallet';
 import { WorkerContext } from '../worker-context';
 import { executeSimulation, executeTransaction, logElapsedTime, signTransaction } from './transaction-handler';
@@ -150,9 +150,7 @@ const executeSwap = async (
                     prioritizationFeeLamports = undefined;
                 }
             } catch (e) {
-                console.log(
-                    `Priority fee estimate unavailable, using configured default: ${JSON.stringify(getErrorObject(e, true))}`,
-                );
+                console.log(`Priority fee estimate unavailable, using configured default: ${describeError(e, true)}`);
             }
             switch (swapProvider) {
                 case SwapProvider.JUPITER:
@@ -227,7 +225,7 @@ const executeSwap = async (
                 break;
             }
         } catch (e) {
-            console.log(`Failed to executeSwap: ${JSON.stringify(getErrorObject(e), null, 2)}`);
+            console.log(`Failed to executeSwap: ${describeError(e)}`);
             if (e instanceof TransactionError && e.transactionErrorType === TransactionErrorType.SIMULATION_FAILED) {
                 e.elapsedTime = transactionResult.elapsedTime + e.elapsedTime;
                 throw e;
@@ -236,7 +234,7 @@ const executeSwap = async (
                 if (e instanceof TransactionError) {
                     e.elapsedTime = transactionResult.elapsedTime + e.elapsedTime;
                 }
-                console.log(`Transaction failed after ${MAX_NUM_RETRIES} attempts: ${e.message}`);
+                console.log(`Transaction failed after ${MAX_NUM_RETRIES} attempts: ${redactSecrets(e.message)}`);
                 throw e;
             } else if (e instanceof TransactionError && numRetries <= MAX_NUM_RETRIES) {
                 transactionResult.elapsedTime = transactionResult.elapsedTime + e.elapsedTime;

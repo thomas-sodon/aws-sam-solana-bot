@@ -17,6 +17,7 @@ import { buildDexScreenerPath, buildShyftGraphQlPath, DEFAULT_TOKEN, getRandomSh
 import { ConnectionOptions, ConnectionPool } from './connection-pool';
 import { WorkerError, WorkerErrorType } from './errors/worker-error';
 import { Env } from './types';
+import { errorMessage } from './util';
 import { WorkerContext } from './worker-context';
 
 export type Raydium_LiquidityPoolv4 = {
@@ -87,7 +88,7 @@ export const getPoolInfo = async (wc: WorkerContext, targetTokenMint: PublicKey,
         if (e instanceof WorkerError && e.workerErrorType === WorkerErrorType.LOW_POOL_LIQUIDITY) {
             throw e;
         }
-        console.log(`DexScreener pool lookup failed, falling back to Shyft: ${(e as Error)?.message ?? e}`);
+        console.log(`DexScreener pool lookup failed, falling back to Shyft: ${errorMessage(e)}`);
         poolInfo = await getAndCheckPoolInfoFromShyft(wc.env, connectionPool, targetTokenMint, checkPoolLiquidity);
         console.log(`Pool info from shyft: ${JSON.stringify(poolInfo, null, 2)}`);
     }

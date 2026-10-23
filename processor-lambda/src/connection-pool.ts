@@ -6,7 +6,7 @@ import { buildRpcUrl, RpcProvider } from './config';
 import { escapeHtml } from './telegram/message-generator';
 import { sendMessage } from './telegram/telegram';
 import { Env, RpcResult } from './types';
-import { getErrorObject, shuffleArray, sleep } from './util';
+import { describeError, errorMessage, shuffleArray, sleep } from './util';
 
 export type ConnectionWrapper = {
     rpcProvider: RpcProvider;
@@ -18,8 +18,6 @@ export type ConnectionOptions = {
     retries?: number;
     retryDelay?: number;
 };
-
-const getErrorMessage = (e: unknown): string => String((e as Error)?.message ?? e);
 
 // Bounded, exponentially backed-off retry budget for HTTP 429s (does not consume the caller's `retries`)
 const getRateLimitRetryConfig = () => ({
@@ -36,7 +34,7 @@ const getRateLimitRetryConfig = () => ({
 
 const notifyConnectionError = (env: Env, message: string) => {
     sendMessage(env, escapeHtml(message)).catch((e) =>
-        console.log(`Failed to send connection error to Telegram: ${getErrorMessage(e)}`),
+        console.log(`Failed to send connection error to Telegram: ${errorMessage(e)}`),
     );
 };
 
@@ -171,10 +169,10 @@ export class ConnectionPool {
             return result;
         } catch (e) {
             const connectionErrorDetails = `Connection Error: ${functionCalled} => `;
-            console.log(`${connectionErrorDetails}${JSON.stringify(getErrorObject(e, true))}`);
-            const rateLimited = getErrorMessage(e).includes('429');
+            console.log(`${connectionErrorDetails}${describeError(e, true)}`);
+            const rateLimited = errorMessage(e).includes('429');
             if (!rateLimited) {
-                notifyConnectionError(this.env, `${connectionErrorDetails}${JSON.stringify(getErrorObject(e, true))}`);
+                notifyConnectionError(this.env, `${connectionErrorDetails}${describeError(e, true)}`);
             }
             if (retries && retries > 0) {
                 if (retryDelay && rateLimited) {
@@ -210,11 +208,11 @@ export class ConnectionPool {
             return result;
         } catch (e) {
             const connectionErrorDetails = `Connection Error ${this.getConnectionDescription(functionCalled, connectionWrapper)} => `;
-            console.log(`${connectionErrorDetails}${JSON.stringify(getErrorObject(e, true))}`);
-            const errorMessage = getErrorMessage(e);
-            const rateLimited = errorMessage.includes('429');
-            if (!rateLimited && !errorMessage.includes('could not find account')) {
-                notifyConnectionError(this.env, `${connectionErrorDetails}${JSON.stringify(getErrorObject(e, true))}`);
+            console.log(`${connectionErrorDetails}${describeError(e, true)}`);
+            const message = errorMessage(e);
+            const rateLimited = message.includes('429');
+            if (!rateLimited && !message.includes('could not find account')) {
+                notifyConnectionError(this.env, `${connectionErrorDetails}${describeError(e, true)}`);
             }
             const rateLimitRetry = getRateLimitRetryConfig();
             if (rateLimited && rateLimitAttempt < rateLimitRetry.maxRetries) {

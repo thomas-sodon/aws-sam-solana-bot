@@ -17,7 +17,7 @@ import { logElapsedTime } from './handler/transaction-handler';
 import { addHyperlink, escapeHtml } from './telegram/message-generator';
 import { sendMessage, updateMessage } from './telegram/telegram';
 import { SwapProgress } from './types';
-import { getErrorObject, sleep } from './util';
+import { errorMessage, getErrorObject, redactSecrets, sleep } from './util';
 import { WorkerContext } from './worker-context';
 
 export const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -62,7 +62,7 @@ export const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGat
         } catch (e) {
             const logError =
                 `Last connection: ${wc.connectionPool.getLastConnection()}\n` +
-                `${JSON.stringify(getErrorObject(e), null, 2)}\n`;
+                `${redactSecrets(JSON.stringify(getErrorObject(e), null, 2))}\n`;
             console.log(logError);
             if (
                 (e instanceof SolanaJSONRPCError && e.message.includes('could not find account')) ||
@@ -86,7 +86,7 @@ export const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGat
                     `${escapeHtml(wc.connectionPool.getLastConnection())}\n` +
                     `${escapeHtml((e as Error).name)}\n` +
                     // TransactionError messages already embed generated (escaped) hyperlinks
-                    `${e instanceof TransactionError ? e.message : escapeHtml((e as Error).message)}`;
+                    `${e instanceof TransactionError ? e.message : escapeHtml(errorMessage(e))}`;
                 if (wc.swapMint?.target) {
                     const dexScreenerLink = addHyperlink(
                         'DexScreener',

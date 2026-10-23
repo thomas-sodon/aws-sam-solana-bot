@@ -77,6 +77,22 @@ describe('lambdaHandler auth', () => {
         expect(mockedUpdateMessage.mock.calls[0][1]).toContain(SwapProgress.SWAP_INVALID);
         expect(mockedUpdateMessage.mock.calls[0][1]).toContain('No token balance found');
     });
+
+    it('redacts API keys from unexpected error messages before they reach Telegram', async () => {
+        mockedProcessSwapEvent.mockRejectedValue(
+            new Error('request to https://rpc.helius.xyz/?api-key=leaky-key-123 failed, reason: ETIMEDOUT'),
+        );
+        await lambdaHandler(
+            buildEvent({
+                headers: { Authorization: 'expected-auth' },
+                body: webhookBody({ type: TransactionType.SWAP, description: 'buy', events: { swap: {} } as any }),
+            }),
+        );
+        const message = mockedUpdateMessage.mock.calls[0][1];
+        expect(message).toContain(SwapProgress.ERROR);
+        expect(message).toContain('https://rpc.helius.xyz/[REDACTED] failed, reason: ETIMEDOUT');
+        expect(message).not.toContain('leaky-key-123');
+    });
 });
 
 describe('handleRequest', () => {

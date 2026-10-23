@@ -147,6 +147,39 @@ describe('ConnectionPool.executeWithConnection', () => {
     });
 });
 
+describe('ConnectionPool error redaction', () => {
+    it('keeps API keys in failing request URLs out of logs and Telegram alerts', async () => {
+        mockedSendMessage.mockResolvedValue({ ok: true } as any);
+        const logged: string[] = [];
+        const logSpy = jest.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+            logged.push(args.map(String).join(' '));
+        });
+        const pool = buildPool();
+        const transportError = new Error(
+            'request to https://solana-mainnet.g.alchemy.com/v2/leaky-key-123 failed, reason: ECONNRESET',
+        );
+        await expect(
+            pool.executeWithConnection('getAccountInfo', async () => {
+                throw transportError;
+            }),
+        ).rejects.toBe(transportError);
+        await expect(
+            pool.execute('dexScreener', async () => {
+                throw transportError;
+            }),
+        ).rejects.toBe(transportError);
+        logSpy.mockRestore();
+
+        const alerts = mockedSendMessage.mock.calls.map((call) => call[1]);
+        expect(alerts).toHaveLength(2);
+        for (const text of [...alerts, ...logged]) {
+            expect(text).not.toContain('leaky-key-123');
+        }
+        expect(alerts[0]).toContain('https://solana-mainnet.g.alchemy.com/[REDACTED]');
+        expect(logged.some((line) => line.includes('[REDACTED]'))).toBe(true);
+    });
+});
+
 describe('ConnectionPool.execute', () => {
     it('retries a connection-less call and only sleeps for rate limits', async () => {
         mockedSendMessage.mockResolvedValue({ ok: true } as any);
