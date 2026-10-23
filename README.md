@@ -9,7 +9,7 @@ Event-driven webhook processing on AWS SAM, with a resilient multi-provider RPC 
 - **Event-driven AWS SAM pipeline.** A Helius webhook hits API Gateway and a container-image TypeScript Lambda (Node 20) processes it. Credentials come from one Secrets Manager secret, and the IAM policy is scoped to that secret.
 - **Resilient multi-provider RPC client.** Every RPC call goes through a shuffled round-robin pool across Helius, Alchemy, Chainstack, Syndica, HelloMoon and Shyft, with bounded exponential backoff on HTTP 429 that does not spend the caller's retry budget.
 - **Typed failure handling.** An error taxonomy decides the retry policy and the Jupiter-to-Raydium fallback. Signed transactions are rebroadcast and polled until the blockhash expires.
-- **Guard rails before funds move.** On-chain mint-authority checks, a pool-liquidity floor, position caps and a simulate-only dry-run mode.
+- **Guard rails before funds move.** On-chain mint-authority checks, a pool-liquidity floor, position caps and a simulate-only dry-run mode, which is the template default.
 - **Hermetic CI.** Typecheck, lint, a Jest suite with sockets and `fetch` blocked, an esbuild bundle and a Docker build on every pull request. Deploys assume an AWS role through GitHub OIDC.
 
 <!-- demo screenshot goes here -->
@@ -223,7 +223,7 @@ This loads the secret, builds the connection pool and sends `getHealth` to every
    sam deploy --guided
    ```
 
-   `--guided` prompts for the stack name, region and two parameters. `SecretName` is the secret from step 1. `EnableExecution` should be `'false'` for a first deploy, so the bot only simulates trades until you have watched it behave. Allow SAM to create the IAM role and an ECR repository for the image. SAM also warns that `SolanaBotProcessorFunction has no authentication`; answer `y`, because requests are authenticated in the handler against `HELIUS_WEBHOOK_AUTH_HEADER` rather than by an API Gateway authorizer. Your answers are saved to `samconfig.toml`, which is git-ignored.
+   `--guided` prompts for the stack name, region and two parameters. `SecretName` is the secret from step 1. `EnableExecution` defaults to `'false'`, so a first deploy only simulates trades until you have watched it behave; keep that default. Allow SAM to create the IAM role and an ECR repository for the image. SAM also warns that `SolanaBotProcessorFunction has no authentication`; answer `y`, because requests are authenticated in the handler against `HELIUS_WEBHOOK_AUTH_HEADER` rather than by an API Gateway authorizer. Your answers are saved to `samconfig.toml`, which is git-ignored.
 
 3. Copy the `SolanaBotProcessorApi` output (`https://<api-id>.execute-api.<region>.amazonaws.com/Prod/processor/`) into a Helius enhanced webhook:
    - transaction type `SWAP`

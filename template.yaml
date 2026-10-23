@@ -13,11 +13,12 @@ Parameters:
     Description: Name of the Secrets Manager secret holding the bot's API keys, wallet key and Telegram settings.
   EnableExecution:
     Type: String
-    Default: 'true'
+    # Dry-run by default: a deploy only simulates swaps until live trading is enabled on purpose
+    Default: 'false'
     AllowedValues:
       - 'true'
       - 'false'
-    Description: Set to 'false' to only simulate swaps instead of broadcasting them.
+    Description: "'false' (the default) only simulates swaps; set to 'true' to sign and broadcast real transactions."
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:

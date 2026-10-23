@@ -109,7 +109,7 @@ Comma-separated values are trimmed, blank entries are dropped, and a missing poo
 | Variable | Set by | Purpose |
 | --- | --- | --- |
 | `SECRET_ID` | Template (`SecretName`) | Secrets Manager secret to load. Defaults to `prod/SolanaBot` when unset. |
-| `ENABLE_EXECUTION` | Template (`EnableExecution`, default `'true'`) | `true` broadcasts real transactions. `false` only simulates them. Parsed as a case-insensitive `true`/`false`. When the value is absent the default is `true`; any other present value (such as `0`, `no` or `off`) fails closed and disables execution. Order of precedence: the secret, then this variable, then the default. |
+| `ENABLE_EXECUTION` | Template (`EnableExecution`, default `'false'`) | `true` broadcasts real transactions. `false` only simulates them. Parsed as a case-insensitive `true`/`false`. When the value is absent the default is `true`; any other present value (such as `0`, `no` or `off`) fails closed and disables execution. Order of precedence: the secret, then this variable, then the default. |
 | `AWS_REGION` | Lambda runtime | Region of the Secrets Manager client. Locally the SDK's normal region resolution applies. |
 | `NODE_ENV` | Optional | Selects the node-config override file (`config/<NODE_ENV>.json`). |
 | `RUN_E2E` | Developer | `1` switches Jest to the live end-to-end suite. |
