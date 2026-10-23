@@ -37,9 +37,15 @@ Resources:
         Variables:
           SECRET_ID: !Ref SecretName
           ENABLE_EXECUTION: !Ref EnableExecution
+          IDEMPOTENCY_TABLE: !Ref ProcessedSignaturesTable
       Policies:
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt ProcessedSignaturesTable.Arn
       Events:
         SolanaBotProcessor:
           Type: Api
@@ -50,6 +56,21 @@ Resources:
       DockerTag: nodejs20.x-v1
       DockerContext: ./processor-lambda
       Dockerfile: Dockerfile
+
+  # One item per leader transaction signature already handled, so webhook retries are not traded twice
+  ProcessedSignaturesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: signature
+          AttributeType: S
+      KeySchema:
+        - AttributeName: signature
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function

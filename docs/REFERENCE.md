@@ -18,7 +18,8 @@ The deployed infrastructure is small and is all defined in [`template.yaml`](../
 | --- | --- |
 | `SolanaBotProcessorFunction` | Container-image Lambda (`processor-lambda/Dockerfile`, `public.ecr.aws/lambda/nodejs:20`), x86_64, 512 MB, 300 s timeout |
 | Implicit `ServerlessRestApi` | REST API with one route, `POST /processor` |
-| IAM policy | `AWSSecretsManagerGetSecretValuePolicy`, scoped to the one secret named by the `SecretName` parameter |
+| IAM policy | `AWSSecretsManagerGetSecretValuePolicy`, scoped to the one secret named by the `SecretName` parameter, plus `dynamodb:PutItem` on `ProcessedSignaturesTable` only |
+| `ProcessedSignaturesTable` | DynamoDB table, on-demand billing, hash key `signature`, TTL on `expiresAt` (7 days). Holds one item per leader transaction signature already claimed. |
 
 ## Error taxonomy
 
@@ -59,6 +60,7 @@ Unclassified errors are retried up to three times. Every error message that reac
     │   ├── worker-context.ts     # Per-invocation context: env, wallet, connection pool
     │   ├── config.ts             # Token constants, provider URLs, ENABLE_EXECUTION parsing
     │   ├── secrets.ts            # Secrets Manager loader
+    │   ├── idempotency.ts        # DynamoDB conditional-put claim on the leader's signature
     │   ├── connection-pool.ts    # Rotating multi-provider RPC pool with 429 backoff
     │   ├── pool-info.ts          # Mint safety checks, DexScreener and Shyft pool discovery
     │   ├── wallet.ts             # Keypair decoding, token balance lookup
@@ -109,6 +111,7 @@ Comma-separated values are trimmed, blank entries are dropped, and a missing poo
 | Variable | Set by | Purpose |
 | --- | --- | --- |
 | `SECRET_ID` | Template (`SecretName`) | Secrets Manager secret to load. Defaults to `prod/SolanaBot` when unset. |
+| `IDEMPOTENCY_TABLE` | Template (`ProcessedSignaturesTable`) | DynamoDB table used to claim each leader signature once. When unset, the duplicate-delivery guard is off. |
 | `ENABLE_EXECUTION` | Template (`EnableExecution`, default `'false'`) | `true` broadcasts real transactions. `false` only simulates them. Parsed as a case-insensitive `true`/`false`. When the value is absent the default is `true`; any other present value (such as `0`, `no` or `off`) fails closed and disables execution. Order of precedence: the secret, then this variable, then the default. |
 | `AWS_REGION` | Lambda runtime | Region of the Secrets Manager client. Locally the SDK's normal region resolution applies. |
 | `NODE_ENV` | Optional | Selects the node-config override file (`config/<NODE_ENV>.json`). |
@@ -162,5 +165,5 @@ Prerequisites in the AWS account (`sam pipeline bootstrap` can create most of th
 
 - An IAM OIDC identity provider for `token.actions.githubusercontent.com` with audience `sts.amazonaws.com`.
 - A pipeline role whose trust policy allows `sts:AssumeRoleWithWebIdentity` from that provider, with a `sub` condition such as `repo:<owner>/aws-sam-solana-bot:environment:production`. It needs `iam:PassRole` on the CloudFormation execution role, CloudFormation stack and change-set permissions, read/write on the artifacts bucket and push rights on the ECR repository.
-- A CloudFormation execution role that can create the stack's resources, including IAM roles (the deploy uses `CAPABILITY_IAM`), Lambda and API Gateway.
+- A CloudFormation execution role that can create the stack's resources, including IAM roles (the deploy uses `CAPABILITY_IAM`), Lambda, API Gateway and DynamoDB.
 - The S3 artifacts bucket and the ECR repository, created before the first run.

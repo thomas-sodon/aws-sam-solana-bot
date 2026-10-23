@@ -6,6 +6,7 @@ import { lambdaHandler } from '../../src/app';
 import { WorkerError, WorkerErrorType } from '../../src/errors/worker-error';
 import { handleRequest } from '../../src/handler/request-handler';
 import { processSwapEvent } from '../../src/handler/swap-handler';
+import { claimSignature } from '../../src/idempotency';
 import { sendMessage, updateMessage } from '../../src/telegram/telegram';
 import { SwapProgress } from '../../src/types';
 import { WorkerContext } from '../../src/worker-context';
@@ -16,11 +17,13 @@ import { fakeEnv } from './fixtures';
 jest.mock('../../src/worker-context');
 jest.mock('../../src/telegram/telegram');
 jest.mock('../../src/handler/swap-handler');
+jest.mock('../../src/idempotency');
 
 const mockedBuild = jest.mocked(WorkerContext.build);
 const mockedSendMessage = jest.mocked(sendMessage);
 const mockedUpdateMessage = jest.mocked(updateMessage);
 const mockedProcessSwapEvent = jest.mocked(processSwapEvent);
+const mockedClaimSignature = jest.mocked(claimSignature);
 
 const fakeWc = () =>
     ({
@@ -34,6 +37,7 @@ describe('lambdaHandler auth', () => {
     beforeEach(() => {
         mockedBuild.mockResolvedValue(fakeWc());
         mockedSendMessage.mockResolvedValue({ ok: true, result: { message_id: 1 } } as any);
+        mockedClaimSignature.mockResolvedValue('claimed');
     });
 
     it.each([
@@ -92,6 +96,59 @@ describe('lambdaHandler auth', () => {
         expect(message).toContain(SwapProgress.ERROR);
         expect(message).toContain('https://rpc.helius.xyz/[REDACTED] failed, reason: ETIMEDOUT');
         expect(message).not.toContain('leaky-key-123');
+    });
+});
+
+describe('lambdaHandler duplicate deliveries', () => {
+    const swapBody = webhookBody({
+        type: TransactionType.SWAP,
+        signature: 'leader-sig',
+        description: 'buy',
+        events: { swap: {} } as any,
+    });
+
+    beforeEach(() => {
+        mockedBuild.mockResolvedValue(fakeWc());
+        mockedSendMessage.mockResolvedValue({ ok: true, result: { message_id: 1 } } as any);
+        mockedProcessSwapEvent.mockResolvedValue({
+            messageToSendTransfer: 'done',
+            numRetries: 0,
+            transactionResult: { txSuccess: false } as any,
+        } as any);
+    });
+
+    it('claims the leader signature and trades a first delivery', async () => {
+        mockedClaimSignature.mockResolvedValue('claimed');
+        const response = await lambdaHandler(
+            buildEvent({ headers: { Authorization: 'expected-auth' }, body: swapBody }),
+        );
+        expect(mockedClaimSignature).toHaveBeenCalledWith('leader-sig');
+        expect(mockedProcessSwapEvent).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(response.body).message).toBe('Processed');
+    });
+
+    it('does not trade a redelivered signature and acknowledges it with 200', async () => {
+        mockedClaimSignature.mockResolvedValue('duplicate');
+        const response = await lambdaHandler(
+            buildEvent({ headers: { Authorization: 'expected-auth' }, body: swapBody }),
+        );
+        expect(response.statusCode).toBe(200);
+        expect(JSON.parse(response.body)).toEqual({ message: 'Duplicate' });
+        expect(mockedProcessSwapEvent).not.toHaveBeenCalled();
+        expect(mockedSendMessage).toHaveBeenCalledTimes(1);
+        expect(mockedSendMessage.mock.calls[0][1]).toContain(SwapProgress.SWAP_IGNORED);
+        expect(mockedSendMessage.mock.calls[0][1]).toContain('Duplicate webhook delivery');
+    });
+
+    it('reports an error and does not trade when the claim itself fails', async () => {
+        mockedClaimSignature.mockRejectedValue(new Error('DynamoDB unavailable'));
+        const response = await lambdaHandler(
+            buildEvent({ headers: { Authorization: 'expected-auth' }, body: swapBody }),
+        );
+        expect(response.statusCode).toBe(500);
+        expect(mockedProcessSwapEvent).not.toHaveBeenCalled();
+        expect(mockedSendMessage.mock.calls[0][1]).toContain(SwapProgress.ERROR);
+        expect(mockedSendMessage.mock.calls[0][1]).toContain('DynamoDB unavailable');
     });
 });
 

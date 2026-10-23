@@ -14,6 +14,7 @@ import { TransactionError } from './errors/transaction-error';
 import { WorkerError, WorkerErrorType } from './errors/worker-error';
 import { handleRequest } from './handler/request-handler';
 import { logElapsedTime } from './handler/transaction-handler';
+import { claimSignature } from './idempotency';
 import { addHyperlink, escapeHtml } from './telegram/message-generator';
 import { sendMessage, updateMessage } from './telegram/telegram';
 import { SwapProgress } from './types';
@@ -38,27 +39,43 @@ export const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGat
             const requestBodyArray = JSON.parse(event.body) as EnrichedTransaction[];
             eventBody = requestBodyArray[0];
             ({ description } = eventBody);
-            sendMessagePromise = sendMessage(
-                wc.env,
-                `${SwapProgress.PROCESSING.toString()}: ${escapeHtml(description)}`,
-            ); // Send to Telegram
-            requestProcessingResult = await handleRequest(wc, eventBody);
-            if (requestProcessingResult.transactionResult?.txSuccess) {
+            // Claim the leader's signature before trading, so a webhook retry or redelivery is not mirrored twice
+            const claim = eventBody.signature ? await claimSignature(eventBody.signature) : 'unguarded';
+            if (claim === 'duplicate') {
+                console.log(`Duplicate delivery of ${eventBody.signature}, not processing it again`);
                 messageToSendTransfer =
-                    `${requestProcessingResult.messageToSendTransfer}\n` +
-                    `${logElapsedTime(requestProcessingResult.transactionResult.elapsedTime, requestProcessingResult.numRetries)}`;
+                    `${SwapProgress.SWAP_IGNORED.toString()}\n` +
+                    `${escapeHtml(description)}\n` +
+                    `Duplicate webhook delivery, already handled\n`;
+                response = {
+                    statusCode: 200,
+                    body: JSON.stringify({
+                        message: 'Duplicate',
+                    }),
+                };
             } else {
-                messageToSendTransfer =
-                    `${requestProcessingResult.messageToSendTransfer}\n` +
-                    `Retries: ${requestProcessingResult.numRetries}`;
+                sendMessagePromise = sendMessage(
+                    wc.env,
+                    `${SwapProgress.PROCESSING.toString()}: ${escapeHtml(description)}`,
+                ); // Send to Telegram
+                requestProcessingResult = await handleRequest(wc, eventBody);
+                if (requestProcessingResult.transactionResult?.txSuccess) {
+                    messageToSendTransfer =
+                        `${requestProcessingResult.messageToSendTransfer}\n` +
+                        `${logElapsedTime(requestProcessingResult.transactionResult.elapsedTime, requestProcessingResult.numRetries)}`;
+                } else {
+                    messageToSendTransfer =
+                        `${requestProcessingResult.messageToSendTransfer}\n` +
+                        `Retries: ${requestProcessingResult.numRetries}`;
+                }
+                response = {
+                    statusCode: 200,
+                    body: JSON.stringify({
+                        message: 'Processed',
+                        result: requestProcessingResult,
+                    }),
+                };
             }
-            response = {
-                statusCode: 200,
-                body: JSON.stringify({
-                    message: 'Processed',
-                    result: requestProcessingResult,
-                }),
-            };
         } catch (e) {
             const logError =
                 `Last connection: ${wc.connectionPool.getLastConnection()}\n` +

@@ -6,7 +6,7 @@ Event-driven webhook processing on AWS SAM, with a resilient multi-provider RPC 
 
 **TL;DR**
 
-- **Event-driven AWS SAM pipeline.** A Helius webhook hits API Gateway and a container-image TypeScript Lambda (Node 20) processes it. Credentials come from one Secrets Manager secret, and the IAM policy is scoped to that secret.
+- **Event-driven AWS SAM pipeline.** A Helius webhook hits API Gateway and a container-image TypeScript Lambda (Node 20) processes it. Credentials come from one Secrets Manager secret, and the IAM policy is scoped to that secret. A DynamoDB conditional write on the leader's transaction signature makes webhook redeliveries idempotent.
 - **Resilient multi-provider RPC client.** Every RPC call goes through a shuffled round-robin pool across Helius, Alchemy, Chainstack, Syndica, HelloMoon and Shyft, with bounded exponential backoff on HTTP 429 that does not spend the caller's retry budget.
 - **Typed failure handling.** An error taxonomy decides the retry policy and the Jupiter-to-Raydium fallback. Signed transactions are rebroadcast and polled until the blockhash expires.
 - **Guard rails before funds move.** On-chain mint-authority checks, a pool-liquidity floor, position caps and a simulate-only dry-run mode, which is the template default.
@@ -79,11 +79,11 @@ flowchart LR
   LMB -. "processing / errors / RPC alerts" .-> TG
 ```
 
-The deployed infrastructure is one container-image Lambda, one REST API route (`POST /processor`) and a Secrets Manager read policy, all in [`template.yaml`](template.yaml). See [Deployed resources](docs/REFERENCE.md#deployed-resources).
+The deployed infrastructure is one container-image Lambda, one REST API route (`POST /processor`), a Secrets Manager read policy and an on-demand DynamoDB table of processed signatures, all in [`template.yaml`](template.yaml). See [Deployed resources](docs/REFERENCE.md#deployed-resources).
 
 ## How a swap flows
 
-1. **Entry and auth** (`src/app.ts`). `lambdaHandler` builds a `WorkerContext`, which loads the secret, decodes the wallet keypair and builds the RPC pool. The request is processed only if the `Authorization` header equals `HELIUS_WEBHOOK_AUTH_HEADER` and the body is not empty. Otherwise the handler returns `200 {"message":"Not processed"}`. The body is a JSON array of Helius `EnrichedTransaction`s, and only the first element is used. A "Processing" message goes to Telegram without being awaited.
+1. **Entry and auth** (`src/app.ts`). `lambdaHandler` builds a `WorkerContext`, which loads the secret, decodes the wallet keypair and builds the RPC pool. The request is processed only if the `Authorization` header equals `HELIUS_WEBHOOK_AUTH_HEADER` and the body is not empty. Otherwise the handler returns `200 {"message":"Not processed"}`. The body is a JSON array of Helius `EnrichedTransaction`s, and only the first element is used. Its signature is then claimed with a conditional put in DynamoDB (`src/idempotency.ts`); if it was already claimed, the delivery is acknowledged with `200 {"message":"Duplicate"}`, reported to Telegram as ignored, and not traded. A "Processing" message goes to Telegram without being awaited.
 2. **Filtering** (`src/handler/request-handler.ts`). Only `type === "SWAP"` transactions that have an `events.swap` payload go on. Anything else is reported to Telegram as ignored.
 3. **Classification and sizing** (`src/handler/swap-handler.ts`). SOL, USDC and USDT count as the "base" side.
    - **Buy** (base in, token out). The bot buys with WSOL, spending the leader's SOL amount capped at `max.buy.sol` (0.01 SOL by default). Stablecoin-funded buys are mirrored as a `max.buy.sol`-sized SOL buy.
@@ -148,7 +148,7 @@ All credentials sit in a single JSON secret that is read at runtime. The secret 
 | Area | Choices |
 | --- | --- |
 | Runtime | Node.js 20, TypeScript 5 (strict), bundled with esbuild into a single CommonJS file |
-| AWS | SAM, Lambda (container image), API Gateway REST, Secrets Manager, CloudFormation |
+| AWS | SAM, Lambda (container image), API Gateway REST, Secrets Manager, DynamoDB, CloudFormation |
 | Solana | `@solana/web3.js`, `@solana/spl-token`, `@raydium-io/raydium-sdk`, `@project-serum/serum` (OpenBook open orders), `bs58` |
 | Market data and routing | Helius (webhooks, priority fees, RPC), Jupiter v6 API (`@jup-ag/api` types), DexScreener, Shyft GraphQL (`graphql-request`), Jupiter price API |
 | RPC providers | Helius, Alchemy, Chainstack, Syndica, HelloMoon, Shyft |
@@ -253,7 +253,7 @@ The **unit suite** mocks the wallet, the connection pool, Telegram and the HTTP 
 - signature-status mapping, and simulation mode
 - Telegram payloads and HTML escaping
 - redaction of API keys from logged and Telegram error messages, for every provider URL
-- the handler's auth and response paths
+- the handler's auth and response paths, and duplicate-delivery handling
 
 `test/setup/hermetic.ts` makes every socket, TLS connection and `fetch` throw, and clears AWS credentials. A missing mock therefore fails the test instead of reaching a real service, and `test/unit/hermetic-guard.test.ts` checks that the guard is active.
 
@@ -265,9 +265,9 @@ This is a working personal trading tool, not a hardened product. These are the k
 
 - **Synchronous processing behind API Gateway.**
   - API Gateway REST integrations time out after 29 seconds, but a swap with retries and confirmation polling can take longer. The Lambda timeout is 300 s.
-  - When the timeout hits, Helius gets a 504 while the Lambda keeps trading. Helius may then retry the delivery.
+  - When the timeout hits, Helius gets a 504 while the Lambda keeps trading. Helius may then retry the delivery; the signature claim stops that retry from trading again, but each retry still costs an invocation.
   - The right design is a thin receiver that validates the request, enqueues it on SQS (with a DLQ) and returns `200` at once, plus a worker Lambda that consumes the queue.
-- **No idempotency.** Nothing deduplicates on the leader's transaction signature, so a webhook retry or redelivery can mirror the same trade twice. A conditional write keyed on the signature, for example in DynamoDB, should guard execution.
+- **At-most-once per signature.** A signature is claimed before the trade is attempted and is not released when the trade fails, so a redelivery never retries a failed trade. Claims expire through DynamoDB TTL after 7 days. Without `IDEMPOTENCY_TABLE` (a run outside the SAM stack) the guard is off. If DynamoDB itself fails, the handler reports an error and does not trade.
 - **No persistence of swap history.** Results go only to CloudWatch Logs and Telegram. There is no trade ledger, PnL tracking or position state.
 - **Per-invocation setup.** The secret is fetched and the connection pool is built on every invocation, before the auth check, and the auth comparison is not constant-time. Caching the context on warm starts and checking auth first would cut latency and cost.
 - **Narrow trade model.**
