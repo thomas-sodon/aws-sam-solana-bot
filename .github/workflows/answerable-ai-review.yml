@@ -1,0 +1,28 @@
+name: Answerable AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  answerable-ai-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      # Fail while earlier findings are still unanswered (no Claude call, no credential).
+      - name: Reply coverage
+        uses: thomas-sodon/answerable-ai-review@ab20bdb0dbf2aa5b132ff1f4195e509331587645 # v0.1.0
+        with:
+          mode: replies
+      # Review the diff with Claude and post findings.
+      - name: Review
+        uses: thomas-sodon/answerable-ai-review@ab20bdb0dbf2aa5b132ff1f4195e509331587645 # v0.1.0
+        with:
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
